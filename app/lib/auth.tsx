@@ -1,92 +1,41 @@
-import { useEffect, useState } from 'react';
-import { supabase } from './supabase';
+"use client";
+
+import { useSession, signIn, signOut } from "next-auth/react";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 import { User, AuthState } from '../types';
-import { useRouter } from 'next/navigation';
 
-export const useAuth = (): AuthState & {
-  signIn: (email: string, password: string) => Promise<{ error: any }>;
+export function useAuth(): AuthState & {
+  signIn: (email: string, password: string) => Promise<any>;
   signOut: () => Promise<void>;
-} => {
-  const [state, setState] = useState<AuthState>({
-    user: null,
-    loading: true,
-  });
+} {
+  const { data: session, status } = useSession();
   const router = useRouter();
+  
+  const user = session?.user as User | null;
+  const loading = status === "loading";
 
-  useEffect(() => {
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (session?.user) {
-          // Get user data from your users table
-          const { data } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', session.user.id)
-            .single();
-          
-          setState({
-            user: data as User,
-            loading: false,
-          });
-        } else {
-          setState({
-            user: null,
-            loading: false,
-          });
-        }
-      }
-    );
-
-    // Initial session check
-    const checkUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (session?.user) {
-        const { data } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', session.user.id)
-          .single();
-        
-        setState({
-          user: data as User,
-          loading: false,
-        });
-      } else {
-        setState({
-          user: null,
-          loading: false,
-        });
-      }
-    };
-    
-    checkUser();
-
-    return () => {
-      authListener?.subscription.unsubscribe();
-    };
-  }, [router]);
-
-  const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
+  const handleSignIn = async (email: string, password: string) => {
+    const result = await signIn("credentials", {
       email,
       password,
+      redirect: false,
     });
-    
-    return { error };
+    return { error: result?.error ? new Error(result.error) : null };
   };
 
-  const signOut = async () => {
-    await supabase.auth.signOut();
-    router.push('/login');
+  const handleSignOut = async () => {
+    await signOut({ redirect: false });
+    router.push("/login");
   };
 
   return {
-    ...state,
-    signIn,
-    signOut,
+    user,
+    loading,
+    signIn: handleSignIn,
+    signOut: handleSignOut,
   };
-};
+}
 
 export const withAuth = (Component: React.FC) => {
   const Auth = (props: any) => {
